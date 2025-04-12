@@ -3,6 +3,7 @@ import Database from "../db/Connection.js";
 import schemaValidator from "../db/Schema.js";
 import etag from "etag";
 import authentication from "../auth/index.js";
+import { publisher, setupRabbitMQ } from "../rabbitmq/publisher.js";
 
 const planRouter = express.Router();
 planRouter.use(authentication);
@@ -24,17 +25,29 @@ export class Plan {
       throw new Error("VALIDATION_FAILUIRE");
     }
     await Database.redisDb.HSET(Plan.KEY, plan.objectId, JSON.stringify(plan));
+    publisher.publish("create", plan);
   }
 
   static async deletePlan(id) {
+    const record = await Database.redisDb.HGET(Plan.KEY, id);
+    if (!record) {
+      throw new Error("NOT_FOUND");
+    }
+    publisher.publish("delete", JSON.parse(record));
     const res = await Database.redisDb.HDEL(Plan.KEY, id);
+
     if (res == 0) {
       throw new Error("NOT_FOUND");
     }
   }
 
   static async updatePlan(plan) {
-    await Database.redisDb.HSET(Plan.KEY, plan.objectId, JSON.stringify(plan));
+    const record = await Database.redisDb.HSET(
+      Plan.KEY,
+      plan.objectId,
+      JSON.stringify(plan)
+    );
+    publisher.publish("update", plan);
   }
 }
 
@@ -69,6 +82,7 @@ planRouter.post("/", async (req, res, next) => {
     else return next(e);
   }
   res.set("Etag", etag(JSON.stringify(req.body), { weak: true }).toString());
+
   return res.status(201).send({
     message: "Plan created successfully",
     status_code: 201,
@@ -185,6 +199,7 @@ planRouter.patch("/:id", async (req, res, next) => {
       message: "Plan updated successfully",
       status_code: 200,
       objectId: id,
+      body: existingPlan,
     });
   } catch (e) {
     if (e.message === "VALIDATION_FAILURE") return res.status(400).send();

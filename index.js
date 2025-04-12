@@ -3,13 +3,14 @@ import express from "express";
 import "dotenv/config";
 import planRouter from "./routes/Plan.js";
 import { connectToRedis } from "./db/Connection.js";
+import { setupRabbitMQ } from "./rabbitmq/publisher.js";
 // import process from "process";
 const PORT = process.env.APPLICATION_PORT;
 const HOST = process.env.APPLICATION_HOST;
 
 const init = async () => {
   await connectToRedis();
-
+  setupRabbitMQ();
   const app = express();
   app.set("etag", false);
 
